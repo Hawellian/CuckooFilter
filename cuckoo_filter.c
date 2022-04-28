@@ -1,7 +1,3 @@
-/*
- * Copyright (C) 2015, Leo Ma <begeekmyfriend@gmail.com>
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -11,7 +7,7 @@
 #include "cuckoo_filter.h"
 
 
-#define SECTOR_SIZE    (4)   //可修改指纹的长度不超过 4字节,但是占空间要改hash_slot_cache的uint32
+#define SECTOR_SIZE    (4)   //length of fingerprint, Max 4B
 #define ASSOC_WAY      (4)   //Number of slots in a bucket
 #define cuckoo_hash_lsb(key, count)  (((uint32_t)(key)) & (count - 1))  //First storage bucket position
 #define force_align(addr, size)  ((void *)((((uintptr_t)(addr)) + (size) - 1) & ~((size) - 1)))
