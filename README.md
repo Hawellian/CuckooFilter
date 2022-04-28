@@ -1,7 +1,7 @@
 Cuckoo Filter
 =============
 
-A key-value filter using cuckoo hashing, substituting for bloom filter.
+A Cuckoo filter for fast membership testing, substituting for bloom filter.
 
 Usage
 -----
