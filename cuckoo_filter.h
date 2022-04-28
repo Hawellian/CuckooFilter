@@ -1,7 +1,3 @@
-/*
- * Copyright (C) 2015, Leo Ma <begeekmyfriend@gmail.com>
- */
-
 #ifndef _CUCKOO_FILTER_H_
 #define _CUCKOO_FILTER_H_
 
