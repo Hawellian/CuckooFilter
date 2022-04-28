@@ -13,4 +13,4 @@ make
 ```
 
 Define `CUCKOO_DBG` in cuckoo_filter.h to open debug logging.
-# C_CuckooFilterLWH
+# CuckooFilter
