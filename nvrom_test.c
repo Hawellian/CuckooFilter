@@ -51,7 +51,7 @@ int main(int argc, char **argv)
                 insert_value = i+insert_num;
                 memcpy(value, &insert_value, sizeof(insert_value));   
                 keys = app_cuckoo_hash(value, sizeof(value));         
-                if(app_cuckoo_chk(t, keys)==0)//查
+                if(app_cuckoo_chk(t, keys)==0)
                 {
                         success++;
                 }    
