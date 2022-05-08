@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include "cuckoo_filter.h"
 
@@ -27,6 +30,17 @@ static inline uint64_t next_pow_of_2(uint64_t x)
     x |= x >> 32;
     x++;
     return x;
+}
+
+static inline char *getLocalTime(char *timeStr, int len, struct timeval tv)
+{
+    struct tm *ptm;
+    long milliseconds;
+    ptm = localtime(&(tv.tv_sec));
+    strftime(timeStr, len, "%Y-%m-%d %H-%M-%S", ptm);
+    milliseconds = tv.tv_usec / 1000;
+    sprintf(timeStr, "%s.%03ld", timeStr, milliseconds);
+    return timeStr;
 }
 
 inline uint32_t fingerp(app_cuckoo_hash_t key) // Ensure fingerprint is not 0
@@ -289,6 +303,24 @@ int app_cuckoo_save(struct app_cuckoo *c, const char *filename)
     fwrite((const void *)&c->bucket_num, sizeof(uint64_t), 1, fp);
     fwrite(c->buckets, sizeof(struct hash_slot_cache), c->bucket_num, fp);
     fclose(fp);
+    return 0;
+}
+
+int app_cuckoo_bgsave(struct app_cuckoo *c, const char *filename)
+{
+    int childpid;
+    struct timeval time;
+
+    if ((childpid = fork()) == 0)
+    {
+        printf("[save-db] app_cuckoo_bgsave start, child-process pid: %d\n", getpid());
+        app_cuckoo_save(c, filename);
+        gettimeofday(&time, NULL);
+        char localTime[128];
+        getLocalTime(localTime, sizeof(localTime), time);
+        printf("[save-db] app_cuckoo_bgsave success at: %s\n", localTime);
+        exit(0);
+    }
     return 0;
 }
 

@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include "cuckoo_filter.h"
 
@@ -21,6 +22,7 @@ int main(int argc, char **argv)
     /* Initialization */
     t = (struct app_cuckoo *)app_cuckoo_alloc(table, socketid, size);
     printf("============ Initialization end =============\n");
+    printf("main process working... pid: %d\n", getpid());
 
     struct timeval time;
     /* Insert */
@@ -43,8 +45,18 @@ int main(int argc, char **argv)
     }
     printf("insert_num is %d, success_num is %d\n\n", i, success);
 
-    // * save cuckooFilter to dbfile
-    app_cuckoo_save(t, "test.db");
+    app_cuckoo_bgsave(t, "test.db");
+
+    for (i = insert_num; i < insert_num * 2; i++)
+    {
+        insert_value = i;
+        memcpy(value, &insert_value, sizeof(insert_value));
+        keys = app_cuckoo_hash(value, sizeof(value));
+        if (app_cuckoo_add(t, keys) == 0)
+        {
+            success++;
+        }
+    }
 
     // * read cuckooFilter from db file
     struct app_cuckoo *c = app_cuckoo_load("test.db");

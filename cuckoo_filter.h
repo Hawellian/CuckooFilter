@@ -28,6 +28,8 @@ int app_cuckoo_chk(struct app_cuckoo *c, app_cuckoo_hash_t fgpt);
 
 int app_cuckoo_save(struct app_cuckoo *c, const char *filename);
 
+int app_cuckoo_bgsave(struct app_cuckoo *c, const char *filename);
+
 struct app_cuckoo *app_cuckoo_load(const char *filename);
 
 #endif /* _CUCKOO_FILTER_H_ */
