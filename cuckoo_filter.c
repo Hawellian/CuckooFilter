@@ -37,13 +37,13 @@ static inline char *getLocalTime(char *timeStr, int len, struct timeval tv)
     struct tm *ptm;
     long milliseconds;
     ptm = localtime(&(tv.tv_sec));
-    strftime(timeStr, len, "%Y-%m-%d %H-%M-%S", ptm);
+    strftime(timeStr, len, "%Y-%m-%d %H:%M:%S", ptm);
     milliseconds = tv.tv_usec / 1000;
-    sprintf(timeStr, "%s.%03ld", timeStr, milliseconds);
+    sprintf(timeStr + strlen(timeStr), ".%03ld", milliseconds);
     return timeStr;
 }
 
-inline uint32_t fingerp(app_cuckoo_hash_t key) // Ensure fingerprint is not 0
+static inline uint32_t fingerp(app_cuckoo_hash_t key) // Ensure fingerprint is not 0
 {
     uint32_t tag;
     tag = ((uint32_t)(key >> 32) & ((1ULL << 8 * SECTOR_SIZE) - 1));
@@ -51,7 +51,7 @@ inline uint32_t fingerp(app_cuckoo_hash_t key) // Ensure fingerprint is not 0
     return tag;
 }
 
-inline uint32_t cuckoo_hash_msb(app_cuckoo_hash_t key, uint64_t count) // Second storage bucket position
+static inline uint32_t cuckoo_hash_msb(app_cuckoo_hash_t key, uint64_t count) // Second storage bucket position
 {
     uint32_t tag;
     tag = ((key >> 32) & ((1ULL << 8 * SECTOR_SIZE) - 1));
