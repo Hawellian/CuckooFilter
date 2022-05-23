@@ -7,6 +7,7 @@
 #include "mozilla-sha1/sha1.h"
 
 typedef uint64_t app_cuckoo_hash_t;
+typedef uint8_t fp_length; //fingerprint is 8 bits
 
 struct app_cuckoo
 {
