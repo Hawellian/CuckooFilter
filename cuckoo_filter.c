@@ -8,15 +8,15 @@
 
 #include "cuckoo_filter.h"
 
-#define SECTOR_SIZE (4)                                               // length of fingerprint, Max 4B
+#define SECTOR_SIZE (1)                                               // length of fingerprint, Max 4B，Now fingerprint is 8 bits
 #define ASSOC_WAY (4)                                                 // Number of slots in a bucket
-#define cuckoo_hash_lsb(key, count) (((uint32_t)(key)) & (count - 1)) // First storage bucket position
+#define cuckoo_hash_lsb(key, count) (((uint64_t)(key)) & (count - 1)) // First storage bucket position
 #define force_align(addr, size) ((void *)((((uintptr_t)(addr)) + (size)-1) & ~((size)-1)))
 
 static uint64_t capacity;
 struct hash_slot_cache
 {
-    uint32_t tag[ASSOC_WAY]; /* summary of key */
+    fp_length tag[ASSOC_WAY]; /* summary of key */
 };
 
 static inline uint64_t next_pow_of_2(uint64_t x)
@@ -28,6 +28,7 @@ static inline uint64_t next_pow_of_2(uint64_t x)
     x |= x >> 8;
     x |= x >> 16;
     x |= x >> 32;
+    x |= x >> 64;
     x++;
     return x;
 }
@@ -43,20 +44,20 @@ static inline char *getLocalTime(char *timeStr, int len, struct timeval tv)
     return timeStr;
 }
 
-static inline uint32_t fingerp(app_cuckoo_hash_t key) // Ensure fingerprint is not 0
+static inline fp_length fingerp(app_cuckoo_hash_t key) // Ensure fingerprint is not 0
 {
-    uint32_t tag;
-    tag = ((uint32_t)(key >> 32) & ((1ULL << 8 * SECTOR_SIZE) - 1));
+    fp_length tag;
+    tag = ((fp_length)(key >> 32) & ((1ULL << 8 * SECTOR_SIZE) - 1));
     tag += (tag == 0);
     return tag;
 }
 
-static inline uint32_t cuckoo_hash_msb(app_cuckoo_hash_t key, uint64_t count) // Second storage bucket position
+static inline uint64_t cuckoo_hash_msb(app_cuckoo_hash_t key, uint64_t count) // Second storage bucket position
 {
-    uint32_t tag;
+    fp_length tag;
     tag = ((key >> 32) & ((1ULL << 8 * SECTOR_SIZE) - 1));
     tag += (tag == 0);
-    uint32_t ret = (((uint32_t)(cuckoo_hash_lsb(key, count) ^ (tag * 0x5bd1e995))) & (count - 1));
+    uint64_t ret = (((uint64_t)(cuckoo_hash_lsb(key, count) ^ (tag * 0x5bd1e995))) & (count - 1));
     return ret;
 }
 
@@ -79,12 +80,11 @@ app_cuckoo_hash_t app_cuckoo_hash(uint8_t *data, uint32_t len)
 static void show_hash_slots(struct app_cuckoo *table)
 {
 #ifdef CUCKOO_DBG
-    int i, j;
-
-    printf("List all keys in hash table (tag/status):\n");
+    uint64_t i, j;
+    printf("List all keys in hash table (tag):\n");
     for (i = 0; i < table->bucket_num; i++)
     {
-        printf("bucket[%04x]:", i);
+        printf("bucket[%lld]:", i);
         for (j = 0; j < ASSOC_WAY; j++)
         {
             printf("\t%04x/", table->buckets[i].tag[j]);
@@ -94,26 +94,26 @@ static void show_hash_slots(struct app_cuckoo *table)
 #endif
 }
 
-static int cuckoo_hash_collide(struct app_cuckoo *table, uint32_t *tag)
+static int cuckoo_hash_collide(struct app_cuckoo *table, uint64_t *tag, fp_length fp)
 {
     int i, j, k, alt_cnt;
-    uint32_t old_tag[3];
-
+    uint64_t old_tag[2];
+    fp_length old_finger;
     /* Kick out the old bucket and move it to the alternative bucket. */
     i = 1;
     alt_cnt = 0;
     k = rand() % ASSOC_WAY;
     old_tag[0] = tag[0];
-    old_tag[2] = table->buckets[tag[0]].tag[k];
-    old_tag[1] = ((uint32_t)(old_tag[0] ^ (old_tag[2] * 0x5bd1e995))) & (table->bucket_num - 1);
-    table->buckets[tag[0]].tag[k] = tag[2];
+    old_finger = table->buckets[tag[0]].tag[k];
+    old_tag[1] = ((uint64_t)(old_tag[0] ^ (old_finger * 0x5bd1e995))) & (table->bucket_num - 1);
+    table->buckets[tag[0]].tag[k] = fp;
 
 KICK_OUT:
     for (j = 0; j < ASSOC_WAY; j++)
     {
         if (table->buckets[old_tag[i]].tag[j] == 0)
         {
-            table->buckets[old_tag[i]].tag[j] = old_tag[2];
+            table->buckets[old_tag[i]].tag[j] = old_finger;
             break;
         }
     }
@@ -126,11 +126,11 @@ KICK_OUT:
         }
 
         k = rand() % ASSOC_WAY;
-        uint32_t tmp_tag = table->buckets[old_tag[i]].tag[k];
-        table->buckets[old_tag[i]].tag[k] = old_tag[2];
-        old_tag[2] = tmp_tag;
+        fp_length tmp_tag = table->buckets[old_tag[i]].tag[k];
+        table->buckets[old_tag[i]].tag[k] = old_finger;
+        old_finger = tmp_tag;
         old_tag[0] = old_tag[i];
-        old_tag[1] = ((uint32_t)(old_tag[0] ^ (old_tag[2] * 0x5bd1e995))) & (table->bucket_num - 1);
+        old_tag[1] = ((uint64_t)(old_tag[0] ^ (old_finger * 0x5bd1e995))) & (table->bucket_num - 1);
         i ^= 1;
 
         goto KICK_OUT;
@@ -141,17 +141,18 @@ KICK_OUT:
 
 int app_cuckoo_chk(struct app_cuckoo *table, app_cuckoo_hash_t key)
 {
-    uint32_t i, j, tag[3];
+    uint32_t i, j;
+    uint64_t tag[2];
     tag[0] = cuckoo_hash_lsb(key, table->bucket_num);
-    tag[2] = fingerp(key);
+    fp_length fp = fingerp(key);
 #ifdef CUCKOO_DBG
     tag[1] = cuckoo_hash_msb(key, table->bucket_num);
-    printf("get t0:%x t1:%x t2:%x\n", tag[0], tag[1], tag[2]);
+    printf("get t0:%llu t1:%llu fp:%x\n", tag[0], tag[1], fp);
 #endif
 
     for (i = 0; i < ASSOC_WAY; i++)
     {
-        if (tag[2] == table->buckets[tag[0]].tag[i])
+        if (fp == table->buckets[tag[0]].tag[i])
         {
             return 0;
         }
@@ -162,7 +163,7 @@ int app_cuckoo_chk(struct app_cuckoo *table, app_cuckoo_hash_t key)
     {
         for (j = 0; j < ASSOC_WAY; j++)
         {
-            if (tag[2] == table->buckets[tag[1]].tag[j])
+            if (fp == table->buckets[tag[1]].tag[j])
             {
                 return 0;
             }
@@ -182,21 +183,21 @@ int app_cuckoo_chk(struct app_cuckoo *table, app_cuckoo_hash_t key)
 
 int app_cuckoo_add(struct app_cuckoo *table, app_cuckoo_hash_t key)
 {
-    int i, j;
-    uint32_t tag[3];
+    uint32_t i, j;
+    uint64_t tag[2];
     tag[0] = cuckoo_hash_lsb(key, table->bucket_num);
+    fp_length fp = fingerp(key);
 
-    tag[2] = fingerp(key);
 #ifdef CUCKOO_DBG
     tag[1] = cuckoo_hash_msb(key, table->bucket_num);
-    printf("put  t0:%x t1:%x fp:%04x\n", tag[0], tag[1], tag[2]);
+    printf("get t0:%llu t1:%llu fp:%x\n", tag[0], tag[1], fp);
 #endif
 
     for (i = 0; i < ASSOC_WAY; i++)
     {
         if (table->buckets[tag[0]].tag[i] == 0)
         {
-            table->buckets[tag[0]].tag[i] = tag[2];
+            table->buckets[tag[0]].tag[i] = fp;
             break;
         }
     }
@@ -208,14 +209,14 @@ int app_cuckoo_add(struct app_cuckoo *table, app_cuckoo_hash_t key)
         {
             if (table->buckets[tag[1]].tag[j] == 0)
             {
-                table->buckets[tag[1]].tag[j] = tag[2];
+                table->buckets[tag[1]].tag[j] = fp;
                 break;
             }
         }
 
         if (j == ASSOC_WAY)
         {
-            if (cuckoo_hash_collide(table, tag))
+            if (cuckoo_hash_collide(table, tag, fp))
             {
 #ifdef CUCKOO_DBG
                 printf("Hash table collision!\n");
@@ -232,21 +233,21 @@ int app_cuckoo_add(struct app_cuckoo *table, app_cuckoo_hash_t key)
 
 int app_cuckoo_del(struct app_cuckoo *table, app_cuckoo_hash_t key)
 {
-    uint32_t i, j, tag[3];
-
+    uint32_t i, j;
+    uint64_t tag[2];
     tag[0] = cuckoo_hash_lsb(key, table->bucket_num);
-    tag[2] = fingerp(key);
-
+    fp_length fp = fingerp(key);
+   
 #ifdef CUCKOO_DBG
     tag[1] = cuckoo_hash_msb(key, table->bucket_num);
-    printf("delete: t0:%x t1:%x\n", tag[0], tag[1]);
+    printf("get t0:%llu t1:%llu \n", tag[0], tag[1]);
 #endif
 
     /* Insert new key into hash buckets. */
 
     for (i = 0; i < ASSOC_WAY; i++)
     {
-        if (tag[2] == table->buckets[tag[0]].tag[i])
+        if (fp == table->buckets[tag[0]].tag[i])
         {
             table->buckets[tag[0]].tag[i] = 0;
             return 0;
@@ -258,7 +259,7 @@ int app_cuckoo_del(struct app_cuckoo *table, app_cuckoo_hash_t key)
         tag[1] = cuckoo_hash_msb(key, table->bucket_num);
         for (j = 0; j < ASSOC_WAY; j++)
         {
-            if (tag[2] == table->buckets[tag[1]].tag[j])
+            if (fp == table->buckets[tag[1]].tag[j])
             {
                 table->buckets[tag[1]].tag[j] = 0;
                 return 0;
@@ -282,7 +283,7 @@ struct app_cuckoo *app_cuckoo_alloc(struct app_cuckoo *table, int socket_id, uin
 
     table[socket_id].bucket_num = capacity / ASSOC_WAY;
     table[socket_id].buckets = malloc(table[socket_id].bucket_num * sizeof(struct hash_slot_cache));
-
+    printf("kongjiandaxiaoshi %lld \n",capacity);
     return &table[socket_id];
 }
 
